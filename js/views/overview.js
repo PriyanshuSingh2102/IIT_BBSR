@@ -16,11 +16,6 @@ window.RakshakOverviewView = {
           <div class="page-subtitle" style="margin-top: 4px; font-size: 12px; color: var(--text-secondary);">
             Bhubaneswar Metropolitan Area &bull; Real-time telemetric monitoring, municipal coverage grid, and automated response pipeline
           </div>
-        <div class="page-controls-group" style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
-          <button class="btn btn-sm btn-outline" id="btn-run-self-test" onclick="window.RakshakOverviewView.runSelfTest()" title="Run System Self-Test">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            <span>Run System Self-Test</span>
-          </button>
         </div>
       </div>
 
@@ -1069,6 +1064,7 @@ window.RakshakOverviewView = {
   },
 
   runSelfTest: function() {
+    // window.RakshakOverviewView.runSelfTest()
     window.RakshakApp.runSelfTest();
   },
 
