@@ -381,7 +381,7 @@ window.RakshakAuth = {
     }
 
     if (!this._analysisCtx) {
-      return { state: 'INSIDE_BOX', msg: 'Face Aligned Inside Box', hint: 'Face Aligned' };
+      return { state: 'NO_FACE', msg: 'No Face Detected &mdash; Align your face inside the box', hint: 'No Face Detected' };
     }
 
     const cw = this._analysisCanvas.width;
@@ -396,15 +396,15 @@ window.RakshakAuth = {
       // Guide bounding box coordinates (normalized to 120x90)
       let boxX1, boxX2, boxY1, boxY2;
       if (targetGuideType === 'iris') {
-        boxX1 = Math.floor(cw * 0.20);
-        boxX2 = Math.floor(cw * 0.80);
-        boxY1 = Math.floor(ch * 0.20);
-        boxY2 = Math.floor(ch * 0.80);
+        boxX1 = Math.floor(cw * 0.25);
+        boxX2 = Math.floor(cw * 0.75);
+        boxY1 = Math.floor(ch * 0.25);
+        boxY2 = Math.floor(ch * 0.75);
       } else {
-        boxX1 = Math.floor(cw * 0.20);
-        boxX2 = Math.floor(cw * 0.80);
-        boxY1 = Math.floor(ch * 0.10);
-        boxY2 = Math.floor(ch * 0.90);
+        boxX1 = Math.floor(cw * 0.25);
+        boxX2 = Math.floor(cw * 0.75);
+        boxY1 = Math.floor(ch * 0.15);
+        boxY2 = Math.floor(ch * 0.85);
       }
 
       let totalSkin = 0;
@@ -418,18 +418,20 @@ window.RakshakAuth = {
           const g = data[idx + 1];
           const b = data[idx + 2];
 
+          // Filter out dark shadows, black camera frames, and ceiling light glare
+          if (r < 40 && g < 30 && b < 30) continue;
+          if (r > 248 && g > 248 && b > 248) continue;
+
           // YCbCr skin cluster conversion
           const yVal =  0.299 * r + 0.587 * g + 0.114 * b;
           const cb   = -0.1687 * r - 0.3313 * g + 0.5 * b + 128;
           const cr   =  0.5 * r - 0.4187 * g - 0.0813 * b + 128;
-          const sumRGB = r + g + b + 1e-5;
-          const normR = r / sumRGB;
-          const normG = g / sumRGB;
 
-          // Universal skin reflectance criteria + robust RGB support for diverse lighting & skin tones
-          const isSkinYCbCr = (cr >= 118 && cr <= 195 && cb >= 62 && cb <= 148 && yVal >= 18);
-          const isSkinRGB = (r > 30 && g > 18 && b > 12 && r > b && (r - g) >= 3);
-          const isSkin = (isSkinYCbCr || isSkinRGB) && (normR > 0.28 || yVal > 35);
+          // Standard human skin reflectance in YCbCr and RGB color space
+          // Rejects dark backgrounds, blue shirts, grey walls, and room shadows
+          const isYCbCrSkin = (cr >= 130 && cr <= 180 && cb >= 75 && cb <= 135 && yVal >= 35);
+          const isRGBSkin = (r > 60 && g > 35 && b > 25 && r > g && (r - g) >= 10 && (r - b) >= 15);
+          const isSkin = isYCbCrSkin && isRGBSkin;
 
           if (isSkin) {
             totalSkin++;
@@ -442,25 +444,23 @@ window.RakshakAuth = {
         }
       }
 
-      // 1. Check if human face is detected in the video frame or guide box
-      // Tolerant threshold prevents lockouts under dim lighting
-      if (totalSkin < 18 || boxSkin < 12) {
-        if (totalSkin < 28) {
-          return {
-            state: 'NO_FACE',
-            msg: 'No Face Detected &mdash; Align your face inside the box',
-            hint: 'No Face Detected',
-            totalSkin: totalSkin,
-            boxSkin: boxSkin
-          };
-        }
+      // 1. Strict check: reject empty room, walls, dark frames, or background noise
+      // A human face inside the frame contains at least 200 skin pixels, with >= 140 inside the box
+      if (totalSkin < 200 || boxSkin < 140) {
+        return {
+          state: 'NO_FACE',
+          msg: 'No Face Detected &mdash; Align your face inside the box',
+          hint: 'No Face Detected',
+          totalSkin: totalSkin,
+          boxSkin: boxSkin
+        };
       }
 
       const meanX = sumX / (totalSkin || 1) / cw;
       const meanY = sumY / (totalSkin || 1) / ch;
 
-      // 2. Check if face is outside the center area
-      if (meanX < 0.16) {
+      // 2. Check if face centroid is outside the center guide box
+      if (meanX < 0.24) {
         return {
           state: 'OUT_OF_BOX',
           msg: 'Move right &rarr; align inside box',
@@ -469,7 +469,7 @@ window.RakshakAuth = {
           meanY: meanY
         };
       }
-      if (meanX > 0.84) {
+      if (meanX > 0.76) {
         return {
           state: 'OUT_OF_BOX',
           msg: 'Move left &larr; align inside box',
@@ -478,7 +478,7 @@ window.RakshakAuth = {
           meanY: meanY
         };
       }
-      if (meanY < 0.08) {
+      if (meanY < 0.15) {
         return {
           state: 'OUT_OF_BOX',
           msg: 'Move down &darr; lower face into box',
@@ -487,7 +487,7 @@ window.RakshakAuth = {
           meanY: meanY
         };
       }
-      if (meanY > 0.92) {
+      if (meanY > 0.85) {
         return {
           state: 'OUT_OF_BOX',
           msg: 'Move up &uarr; raise face into box',
@@ -496,7 +496,7 @@ window.RakshakAuth = {
           meanY: meanY
         };
       }
-      if (boxSkin < 14) {
+      if (boxSkin < 120) {
         return {
           state: 'OUT_OF_BOX',
           msg: 'Move closer to the camera &mdash; center face inside box',
@@ -506,7 +506,7 @@ window.RakshakAuth = {
         };
       }
 
-      // 3. FACE IS INSIDE BOX
+      // 3. Human face is genuinely detected and aligned inside the guide box!
       return {
         state: 'INSIDE_BOX',
         msg: targetGuideType === 'iris' ? 'Eyes Aligned &mdash; Scanning Iris Pattern...' : 'Face Aligned &mdash; Hold steady...',
@@ -1152,19 +1152,17 @@ window.RakshakAuth = {
           }
 
           let regFaceFrames = 0;
-          let regFaceTicks = 0;
           if (this.detectionInterval) clearInterval(this.detectionInterval);
           this.detectionInterval = setInterval(() => {
-            regFaceTicks++;
             const det = this.detectFaceInVideo(video, "face");
-            if (det.state === "WAITING_CAMERA" && regFaceTicks < 10) {
+            if (det.state === "WAITING_CAMERA") {
               regFaceFrames = 0;
               if (camStatus) camStatus.textContent = "Connecting to camera sensor...";
               return;
             }
-            if (det.state === "INSIDE_BOX" || regFaceTicks >= 18) {
+            if (det.state === "INSIDE_BOX") {
               if (guide) guide.className = "camera-guide-face aligned";
-              regFaceFrames += (det.state === "INSIDE_BOX" ? 2 : 1);
+              regFaceFrames++;
               const pct = Math.min(100, Math.round((regFaceFrames / 10) * 100));
               if (hint) hint.textContent = `Face Aligned (${pct}%)`;
               if (camStatus) camStatus.innerHTML = `<span style="color: #0F172A; font-weight: 700;">Scanning face geometry... Hold position (${pct}%)</span>`;
@@ -1261,18 +1259,16 @@ window.RakshakAuth = {
           }
 
           let regIrisFrames = 0;
-          let regIrisTicks = 0;
           if (this.detectionInterval) clearInterval(this.detectionInterval);
           this.detectionInterval = setInterval(() => {
-            regIrisTicks++;
             const det = this.detectFaceInVideo(video, "iris");
-            if (det.state === "WAITING_CAMERA" && regIrisTicks < 10) {
+            if (det.state === "WAITING_CAMERA") {
               regIrisFrames = 0;
               return;
             }
-            if (det.state === "INSIDE_BOX" || regIrisTicks >= 14) {
+            if (det.state === "INSIDE_BOX") {
               if (guide) guide.className = "camera-guide-iris aligned";
-              regIrisFrames += (det.state === "INSIDE_BOX" ? 2 : 1);
+              regIrisFrames++;
               const pct = Math.min(100, Math.round((regIrisFrames / 8) * 100));
               if (hint) hint.textContent = `Eyes Aligned (${pct}%)`;
               if (camStatus) camStatus.innerHTML = `<span style="color: #0F172A; font-weight: 700;">Scanning iris biometric texture... Hold steady (${pct}%)</span>`;
@@ -1567,48 +1563,13 @@ window.RakshakAuth = {
         if (currentStage === "face") {
           const det = this.detectFaceInVideo(video, "face");
 
-          if (det.state === "WAITING_CAMERA" && !isDemo) {
+          if (det.state === "WAITING_CAMERA") {
             if (guide) guide.className = "camera-guide-face no-face";
             if (hint) hint.textContent = "Connecting to camera sensor...";
             if (statusTitle) {
               statusTitle.innerHTML = `<span style="color: #64748B; font-weight: 600;">Connecting to camera sensor...</span>`;
             }
             faceAlignedFrames = 0;
-            return;
-          }
-
-          // In demo mode: simulate biometric scanning and auto-pass as promised
-          if (isDemo) {
-            if (guide) guide.className = "camera-guide-face aligned";
-            faceAlignedFrames += (det.state === "INSIDE_BOX" ? 2 : 1);
-            const pct = Math.min(100, Math.round((faceAlignedFrames / REQUIRED_FACE_FRAMES) * 100));
-
-            if (hint) hint.textContent = `Face Aligned • Hold Steady (${pct}%)`;
-            if (statusTitle) {
-              statusTitle.innerHTML = `<span style="color: #0F172A; font-weight: 700;">Verifying Officer Identity &mdash; Face Scan in Progress (${pct}%)...</span>`;
-            }
-
-            if (faceAlignedFrames >= REQUIRED_FACE_FRAMES) {
-              currentStage = "transition_to_iris";
-              if (guide) guide.className = "camera-guide-face verified";
-              if (statusTitle) {
-                statusTitle.innerHTML = `<span style="color: #16A34A; font-weight: 700;">Identity Verified ✓ &mdash; Welcome, ${officer.name}</span>`;
-              }
-              if (hint) hint.textContent = "Face Verified ✓";
-              this.playTone("success");
-
-              setTimeout(() => {
-                const activeMod = document.getElementById("camera-biometric-modal");
-                if (!activeMod || activeMod.style.display === "none") return;
-                currentStage = "iris";
-                irisAlignedFrames = 0;
-                if (guide) guide.className = "camera-guide-iris";
-                if (hint) hint.textContent = "Look directly into the camera";
-                if (statusTitle) {
-                  statusTitle.innerHTML = `Confirm Eye Scan &bull; Scanning Iris Pattern...`;
-                }
-              }, 1200);
-            }
             return;
           }
 
@@ -1645,7 +1606,7 @@ window.RakshakAuth = {
 
             if (faceAlignedFrames >= REQUIRED_FACE_FRAMES) {
               // Check if officer has enrolled biometrics
-              if (officer.enrolledBiometrics === false) {
+              if (!isDemo && officer.enrolledBiometrics === false) {
                 if (this.detectionInterval) clearInterval(this.detectionInterval);
                 this.stopCameraStream();
                 if (mismatchBanner) mismatchBanner.style.display = "flex";
@@ -1692,33 +1653,6 @@ window.RakshakAuth = {
           }
         } else if (currentStage === "iris") {
           const det = this.detectFaceInVideo(video, "iris");
-
-          // In demo mode: simulate iris scanning and complete verification
-          if (isDemo) {
-            irisAlignedFrames += (det.state === "INSIDE_BOX" ? 2 : 1);
-            const irisPct = Math.min(100, Math.round((irisAlignedFrames / REQUIRED_IRIS_FRAMES) * 100));
-            if (guide) guide.className = "camera-guide-iris aligned";
-            if (hint) hint.textContent = `Eyes Aligned • Hold Steady (${irisPct}%)`;
-            if (statusTitle) {
-              statusTitle.innerHTML = `Confirm Eye Scan &bull; Scanning Iris Pattern (${irisPct}%)...`;
-            }
-
-            if (irisAlignedFrames >= REQUIRED_IRIS_FRAMES) {
-              currentStage = "completed";
-              if (this.detectionInterval) clearInterval(this.detectionInterval);
-              if (guide) guide.className = "camera-guide-iris verified";
-              if (statusTitle) {
-                statusTitle.innerHTML = `<span style="color: #16A34A; font-weight: 700;">Iris Verified ✓</span>`;
-              }
-              if (hint) hint.textContent = "Iris Verified ✓";
-              this.playTone("chime");
-
-              setTimeout(() => {
-                this.completeBiometricLogin(officer);
-              }, 1000);
-            }
-            return;
-          }
 
           if (det.state === "WAITING_CAMERA") {
             irisAlignedFrames = 0;
